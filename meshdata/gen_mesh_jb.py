@@ -68,8 +68,7 @@ def main(h, inner_radius, ecc):
 
     domain_grp = gmsh.model.addPhysicalGroup(2, [domain_surface])
     gmsh.model.setPhysicalName(2, domain_grp, "Domain")
-
-
+    
     # Synchronize the CAD (.geo) entities with the model
     gmsh.model.geo.synchronize()
 
@@ -80,12 +79,13 @@ def main(h, inner_radius, ecc):
     gmsh.write(filepath + ".msh")
 
     # Visualize mesh
-    """if '-nopopup' not in sys.argv:
-        gmsh.fltk.run()"""
+    if '-nopopup' not in sys.argv:
+        gmsh.fltk.run()
+        """"""
 
     # Always run this at the end
     gmsh.finalize()
-        
+    
     ##########################################################
     ####    Gmsh construction is over, now on to Fenics   ####
     ##########################################################

@@ -23,7 +23,6 @@ applied to the O3 Model, and we do exactly that here.
 
 from fenics import *
 from meshdata import gen_mesh_jb
-from meshdata import gen_mesh_ldc
 import steady_nse_solver
 import os
 import matplotlib.pyplot as plt
