@@ -1,0 +1,38 @@
+Want to eventually add continuation to SRTD
+
+Suppose we want to solve a nonlinear problem F(x;l)=0 for x 
+    given a parameter l
+
+
+Continuation methods are used when the problem difficulty 
+    generally increases with the parameter value, and the
+    idea is to first solve the problem with a small parameter
+    value, and use the solution from the small parameter problem
+    as the initial guess for solving the problem with a larger
+    parameter
+
+The solution from the previous solve, used as the initial guess for
+    the next solve, is often called the "predictor"
+    
+
+Continuation Schemes:
+    "Natural parameter continuation" starts with a fixed parameter, 
+        lik 0, and increments it by a constant delta_l every time. 
+        That is,
+            Then solve for l0
+            Then solve for l1 = l0 + dl with x=x(l0) as the initial guess
+            Then solve for l2 = l1 + dl with x=x(l1) as the initial guess
+            and so on until we reach the desired l
+
+    "Linear Secant Predictor"
+        Usually, the natural parameter continuation is not the best choice 
+        of predictors. The linear secant predictor is an easy and cheap 
+        improvement
+
+        Once we have 2 solutions, say x(l0) and x(l1), then our predictor 
+        for solving x(l2) is not x(l1), but rather, 
+            x_0(l2) = 2*x(l1) - x(l0)
+    
+    "Pseudo Arclength Continuation" is another recommended by Kelley in "Solving
+        Nonlinear Equations with Iterative Methods"
+
