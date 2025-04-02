@@ -6,7 +6,6 @@
 
 from fenics import *
 from meshdata import gen_mesh_jb
-from meshdata import gen_mesh_ldc
 import os
 import math as math
 import matplotlib.pyplot as plt
@@ -16,7 +15,6 @@ class Results:
         self.converged = converged
         self.velocity = velocity
         self.pressure = pressure
-        self.stress_tensor = stress_tensor
         self.iters = iters
 
 
@@ -67,12 +65,10 @@ def navier_stokes_JB(h, rad, ecc, s, eta):
     # Element spaces
     P_elem = FiniteElement("CG", triangle, 1) #pressure and auxiliary pressure, degree 1 elements
     V_elem = VectorElement("CG", triangle, 2) #velocity, degree 2 elements
-    T_elem = TensorElement("CG", triangle, 2, symmetry=True) #tensor, degree 2 elements
     
     W_elem = MixedElement([V_elem, P_elem]) # Mixed/Taylor Hood element space for Navier-Stokes type equations
 
     W = FunctionSpace(mesh, W_elem) # Taylor-Hood/mixed space
-    T = FunctionSpace(mesh, T_elem) # tensor space (only used for returning stress)
     
     # Interpolate body force and BCs onto velocity FE space
     g_inner = interpolate(g_inner, W.sub(0).collapse())
@@ -113,13 +109,7 @@ def navier_stokes_JB(h, rad, ecc, s, eta):
     # Likewise, not sure which is preferred
     u_soln, p_soln = you.split(deepcopy=True)
     
-    #also return stress tensor value, for reference
-    stress_tensor = 2*eta*(sym(grad(u_soln)))
-    
-    #print("L2 norm of stress tensor:")
-    #print(norm(stress_tensor, 'l2'))
-    
-    return Results(converged, u_soln, p_soln, stress_tensor, iters)
+    return Results(converged, u_soln, p_soln, iters)
  
 
 def navier_stokes_LDC(h, s, eta):
@@ -137,12 +127,10 @@ def navier_stokes_LDC(h, s, eta):
     # Element spaces
     P_elem = FiniteElement("CG", triangle, 1) #pressure and auxiliary pressure, degree 1 elements
     V_elem = VectorElement("CG", triangle, 2) #velocity, degree 2 elements
-    T_elem = TensorElement("CG", triangle, 2, symmetry=True) #tensor, degree 2 elements (only used for outputting stress Tensor)
-    
+
     W_elem = MixedElement([V_elem, P_elem]) # Mixed/Taylor Hood element space for Navier-Stokes type equations
 
     W = FunctionSpace(mesh, W_elem) # Taylor-Hood/mixed space
-    T = FunctionSpace(mesh, T_elem) # tensor space (only used for returning stress)
     
     # Interpolate body force and BCs onto velocity FE space
     g_top = interpolate(g_top, W.sub(0).collapse())
@@ -186,14 +174,8 @@ def navier_stokes_LDC(h, s, eta):
     
     # Likewise, not sure which is preferred
     u_soln, p_soln = you.split(deepcopy=True)
-    
-    #also return stress tensor value, for reference
-    stress_tensor = 2*eta*(sym(grad(u_soln)))
-    
-    #print("L2 norm of stress tensor:")
-    #print(norm(stress_tensor, 'l2'))
-    
-    return Results(converged, u_soln, p_soln, stress_tensor, iters)
+        
+    return Results(converged, u_soln, p_soln, iters)
 
 
 def navier_stokes_LDC3D(h, s, eta):
@@ -203,7 +185,6 @@ def navier_stokes_LDC3D(h, s, eta):
 
     # boundary data
     g_top = Expression(("s*256.0*x[0]*x[0]*x[1]*x[1]*(1-x[0])*(1-x[0])*(1-x[1])*(1-x[1])", "0.0", "0.0"), s=s, degree = 4) 
-    #g_top = Constant((float(s), 0.0))
     g_walls = Constant((0.0, 0.0, 0.0)) #g=0 on walls
     
     # body forces
@@ -212,12 +193,10 @@ def navier_stokes_LDC3D(h, s, eta):
     # Element spaces
     P_elem = FiniteElement("CG", tetrahedron, 1) #pressure and auxiliary pressure, degree 1 elements
     V_elem = VectorElement("CG", tetrahedron, 2) #velocity, degree 2 elements
-    T_elem = TensorElement("CG", tetrahedron, 2, symmetry=True) #tensor, degree 2 elements (only used for outputting stress Tensor)
-    
+
     W_elem = MixedElement([V_elem, P_elem]) # Mixed/Taylor Hood element space for Navier-Stokes type equations
 
     W = FunctionSpace(mesh, W_elem) # Taylor-Hood/mixed space
-    T = FunctionSpace(mesh, T_elem) # tensor space (only used for returning stress)
     
     # Interpolate body force and BCs onto velocity FE space
     g_top = interpolate(g_top, W.sub(0).collapse())
@@ -265,13 +244,7 @@ def navier_stokes_LDC3D(h, s, eta):
     # Likewise, not sure which is preferred
     u_soln, p_soln = you.split(deepcopy=True)
     
-    #also return stress tensor value, for reference
-    stress_tensor = 2*eta*(sym(grad(u_soln)))
-    
-    #print("L2 norm of stress tensor:")
-    #print(norm(stress_tensor, 'l2'))
-    
-    return Results(converged, u_soln, p_soln, stress_tensor, iters)
+    return Results(converged, u_soln, p_soln, iters)
 
 
 # Post-processing/new function stuff here
