@@ -13,7 +13,7 @@ class Results:
         self.stress_tensor = stress_tensor
 
 
-def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, mu1, max_srtd_iters, tol, continuation_scheme, continuation_steps):
+def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, a, max_srtd_iters, tol, continuation_scheme, continuation_steps):
     if(rad>=1 or rad<=0 or ecc<0 or rad+ecc>1):
         #throw exception, forgot how lol
         print("Error: Inputs not valid")
@@ -69,6 +69,8 @@ def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, mu1, max_srtd_iters, tol, c
     P = FunctionSpace(mesh, P_elem) # true pressure space
     V = FunctionSpace(mesh, V_elem) # velocity space 
     T = FunctionSpace(mesh, T_elem) # tensor space
+
+    w_assigner = FunctionAssigner(W, [V, P]) # for updating w1 as initial guess for the nonlinear Newton (NSE) solve
     
     # Interpolate body force and BCs onto velocity FE space
     g_inner = interpolate(g_inner, W.sub(0).collapse())
@@ -101,7 +103,7 @@ def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, mu1, max_srtd_iters, tol, c
     # previous and next SRTD iterations. Symbolic when they are used in the weak forms, or pointers to the actual function values 
     #w0 = Function(W)
     u0 = Function(V)    
-    #pi0 = Function(P)
+    pi0 = Function(P)
     p0 = Function(P)
     T0_vec = Function(T)
     T0 = as_tensor([[T0_vec[0], T0_vec[1]], [T0_vec[1], T0_vec[2]]]) 
@@ -143,11 +145,11 @@ def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, mu1, max_srtd_iters, tol, c
 
     fig = plt.figure()
 
-    l1_vals = np.linspace(0, l_max, continuation_steps)
+    l1_vals = np.linspace(1e-2, l_max, continuation_steps)
     for l1 in l1_vals:
         # solve SRTD for this given l1
         l1 = float(l1)
-        mu1 = l1
+        mu1 = a*l1
         print("="*100)
         print("Solving Continuation step %d, l1 = %.4e\n"%(continuation_iters, l1))
 
@@ -192,30 +194,35 @@ def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, mu1, max_srtd_iters, tol, c
         l2diff = 1.0
         residuals = {} # empty dict to save residual value after each iteration
         Newton_iters = {}
+        newton_converged=True
         min_residual = 1.0
-        while(n<=max_srtd_iters and min_residual > tol):
+        while(n<=max_srtd_iters and min_residual > tol and newton_converged == True):
             try: 
-                (Newton_iters[n], converged) = nse_solver.solve() # updates w1
+                (Newton_iters[n], newton_converged) = nse_solver.solve() # updates w1
             except: 
                 print("Newton Method in the Navier-Stokes-like stage failed to converge")
+                newton_converged = False
                 #return Results(False, u_return, pi_return, p_return, T_return, residuals, Newton_iters)
             
-            u_next, pi_next = w1.split(deepcopy=True)
-            assign(u1, u_next) # u1 updated
-            assign(pi1, pi_next) # pi1 updated
+            if newton_converged:
 
-            p_solver.solve() # p1 updated
+                u_next, pi_next = w1.split(deepcopy=True)
+                assign(u1, u_next) # u1 updated
+                assign(pi1, pi_next) # pi1 updated
 
-            T_solver.solve() # T1_vec updated
-            T1 = as_tensor([[T1_vec[0], T1_vec[1]], [T1_vec[1], T1_vec[2]]]) # reshape to appropriate 
+                p_solver.solve() # p1 updated
 
-            # End of this SRTD iteration
-            if converged:
+                T_solver.solve() # T1_vec updated
+                T1 = as_tensor([[T1_vec[0], T1_vec[1]], [T1_vec[1], T1_vec[2]]]) # reshape to appropriate 
+
+                # End of this SRTD iteration
                 l2diff = errornorm(u1, u0, norm_type='l2', degree_rise=0)
+                residuals[n] = l2diff
             else:
                 l2diff = 1.0
-            residuals[n] = l2diff
-            if(l2diff <= min_residual):
+
+            # new best guess?
+            if(l2diff <= min_residual): 
                 l1_return = l1 # means we hit some local minimum for this l1, it didn't immediately explode
                 min_residual = l2diff
                 u_return.assign(u1)
@@ -238,15 +245,19 @@ def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, mu1, max_srtd_iters, tol, c
         if continuation_scheme == 0:
             print("No continuation, restarting SRTD iteration at 0...")
             u0.assign(Constant((0.0, 0.0)))
+            pi0.assign(Constant(0.0))
             p0.assign(Constant(0.0))
             T0_vec.assign(Constant((0.0, 0.0, 0.0)))
+            w_assigner.assign(w1, [u0, pi0])
 
         elif continuation_scheme == 1:
             print("Using natural parameter continuation...")
             # best guess from last solve saved in var_return
             u0.assign(u_return)
+            pi0.assign(pi_return)
             p0.assign(p_return)
             T0_vec.assign(T_return_vec)
+            w_assigner.assign(w1, [u0, pi0])
         
         elif continuation_scheme == 2:
             print("Using secant line predictor continuation...")
@@ -266,31 +277,49 @@ def JB_SRTD_continuation(h, rad, ecc, s, eta, l_max, mu1, max_srtd_iters, tol, c
                 u0.assign(u_lambda)
                 p0.assign(p_lambda)
                 T0_vec.assign(T_lambda_vec)
+                w_assigner.assign(w1, [u0, pi_return])
             else:
                 # we have at least two previous terms, so use the linear secant predictor
                 print("Using secant line predictor")
                 u0.assign(2*u_lambda - u_lambda_m_dl)
                 p0.assign(2*p_lambda - p_lambda_m_dl)
                 T0_vec.assign(2*T_lambda_vec - T_lambda_m_dl_vec)
+                w_assigner.assign(w1, [u0, pi_return])
         else:
             raise ValueError("Continuation scheme not defined!")
 
         T0 = as_tensor([[T0_vec[0], T0_vec[1]], [T0_vec[1], T0_vec[2]]]) # T0 updated
-        plt.semilogy(residuals.keys(), residuals.values(), label='$\lambda_{1} = $%1.4e'%l1)
+        plt.semilogy(residuals.keys(), residuals.values(), marker = 'o', markerfacecolor='none', label='$\lambda_{1} = $%1.2f'%l1)
         
     
     # once continuation iteration is done, plot and return values
-    plt.hlines(y=tol,xmin = 0, xmax=max_srtd_iters, linestyles = '--', label="Tol: %1.1e"%tol)
+    plt.hlines(y=tol,xmin = 0, xmax=max_srtd_iters, linestyles = '--', label="") # label="Tol: %1.1e"%tol
     if continuation_scheme == 0:
-        plt.title("Residual vs iteration, no continuation")
+        plt.title("") # do nothing, no title
     elif continuation_scheme == 1:
-        plt.title("Residual vs iteration, natural paraemter continuation")
+        plt.title("Natural Parameter Continuation")
     elif continuation_scheme == 2:
-        plt.title("Residual vs iteration, secant line predictor continuation")
+        plt.title("Secant Line Predictor Continuation")
     else:
         plt.title("If you see this, somethign is seriously broken")
-    plt.legend() 
-    plt.xlabel("SRTD iteration")
-    plt.ylabel("residual")
+    
+    fsize = 15
+
+    plt.xticks(range(1, max_srtd_iters+1, 3), fontsize=fsize-2)
+    plt.yticks(fontsize=fsize-2)
+
+    plt.xlabel("SRTD Iteration", fontsize=fsize)
+    plt.ylabel("Residual", fontsize=fsize)
+
+    # legend, in reverse order of how they were plotted (highest l1 at the top)
+    ax = plt.gca()
+    handles, labels = ax.get_legend_handles_labels()
+    plt.legend(handles[::-1], labels[::-1], fontsize=fsize-4)
+
+    if a==1.0:
+        plt.savefig("jb_ucm_num_iters_comparison_continuation_%d.pdf"%continuation_scheme, bbox_inches='tight')
+    elif a==0.0:
+        plt.savefig("jb_corot_num_iters_comparison_continuation_%d.pdf"%continuation_scheme, bbox_inches='tight')
+        
     plt.show()
     return Results(l1_return, u_return, pi_return, p_return, T_return_vec)
